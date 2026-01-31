@@ -11,7 +11,6 @@ st.set_page_config(page_title="PRO부동산 매물 카드 생성기", page_icon=
 def safe_float(value):
     if not value: return 0.0
     try:
-        # 문자열일 경우 쉼표 제거 등 처리, 이미 숫자면 그대로 반환
         clean_val = re.sub(r'[^0-9.]', '', str(value))
         return float(clean_val) if clean_val else 0.0
     except: return 0.0
@@ -72,7 +71,6 @@ st.caption("PC/모바일 어디서든 접속하여 매물 카드를 생성하세
 # 세션 상태 초기화 (데이터 저장소)
 if 'init' not in st.session_state:
     st.session_state.init = True
-    # 초기값 설정
     st.session_state.p_sale = "24"
     st.session_state.p_premium = "15"
     st.session_state.p_rent = "18"
@@ -88,7 +86,6 @@ selected_zone = st.selectbox("구역 선택", list(ZONE_DATA.keys()))
 if 'last_zone' not in st.session_state or st.session_state.last_zone != selected_zone:
     st.session_state.last_zone = selected_zone
     zone_info = ZONE_DATA[selected_zone]
-    # 리스트 내용은 나중에 이미지 생성 시 직접 참조
     st.session_state.tax_rate = zone_info[5]
     st.session_state.tax_val = zone_info[6]
 
@@ -104,9 +101,16 @@ with st.form("input_form"):
         p_total = st.text_input("8. 총 매수가 (억)", value=st.session_state.p_total)
     
     with col2:
-        invest_price = st.text_input("3. 초기투자금 (자동/수동)", value=format_num(safe_float(p_sale) - safe_float(p_rent)))
+        # 자동 계산: 매매가 - 임대
+        invest_calc = format_num(safe_float(p_sale) - safe_float(p_rent))
+        invest_price = st.text_input("3. 초기투자금 (자동/수동)", value=invest_calc)
+        
         p_premium = st.text_input("5. 프리미엄 (억)", value=st.session_state.p_premium)
-        p_rights = st.text_input("6. 권리가 (자동/수동)", value=format_num(safe_float(p_sale) - safe_float(p_premium)))
+        
+        # 자동 계산: 매매가 - 프리미엄
+        rights_calc = format_num(safe_float(p_sale) - safe_float(p_premium))
+        p_rights = st.text_input("6. 권리가 (자동/수동)", value=rights_calc)
+        
         p_margin = st.text_input("9. 안전마진 (억)", value=st.session_state.p_margin)
 
     st.markdown("---")
@@ -120,12 +124,14 @@ with st.form("input_form"):
         current_tax_val = st.session_state.tax_val
         # 세율이나 매매가가 바뀌면 자동 계산 시도
         if tax_rate and p_sale:
-             calc_tax = int(safe_float(p_sale) * safe_float(tax_rate) * 100)
-             current_tax_val = f"{calc_tax:,}만원"
+             try:
+                 calc_tax = int(safe_float(p_sale) * safe_float(tax_rate) * 100)
+                 current_tax_val = f"{calc_tax:,}만원"
+             except:
+                 pass
         
         final_tax_str = st.text_input("취득세 결과 (수정 가능)", value=current_tax_val)
 
-    # 상세 리스트 (구역 데이터에서 가져오되 수정 가능하게)
     st.caption("상세 리스트 내용")
     list_inputs = []
     zone_defaults = ZONE_DATA[selected_zone]
@@ -142,20 +148,16 @@ with st.form("input_form"):
 
 # --- 5. 이미지 생성 및 다운로드 ---
 if submitted:
-    # 폰트 로드 (Streamlit Cloud 배포 시 경로 주의)
-    # 로컬에선 같은 폴더, 서버에선 업로드 필요
     font_path = "malgunbd.ttf"
     if not os.path.exists(font_path):
-        # 폰트 파일이 없으면 경고 메시지 출력 후 기본 폰트 사용 (디자인 깨질 수 있음)
         st.warning("⚠️ 'malgunbd.ttf' 폰트 파일이 없습니다. 기본 폰트를 사용합니다.")
-        font_path = None # PIL 기본 폰트 사용
+        font_path = None
 
     try:
         width, height = 1300, 950
         image = Image.new('RGB', (width, height), (255, 255, 255))
         draw = ImageDraw.Draw(image)
 
-        # Colors & Fonts
         BLACK, WHITE, YELLOW, RED = (0, 0, 0), (255, 255, 255), (255, 255, 0), (255, 20, 20)
         GRAY_BG, PINK_BG = (240, 240, 240), (255, 230, 230)
         TRANSPARENT_EMERALD = (210, 255, 230, 128)
@@ -175,14 +177,16 @@ if submitted:
         f_footer = get_font(35); f_platform = [get_font(21), get_font(18)]
         f_tax_val = get_font(40)
 
-        # Drawing Logic (v61 Codebase)
+        # Drawing Logic
         draw.rectangle([(0, 0), (width, 160)], fill=BLACK)
         brand_x_center = 150
         draw.text((brand_x_center, 60), "대한민국 부동산", fill=WHITE, font=f_brand, anchor="mm")
         header_parts = [("NO.1", YELLOW), (" 플랫폼", WHITE)]
         draw_multicolor_centered(draw, brand_x_center, 110, header_parts, f_brand, anchor_y="m")
         draw.text((width/2 - 10, 80), f"노량진 {selected_zone}", fill=WHITE, font=f_header, anchor="mm")
-        draw.text((width/2 + 410, 80), prop_type, fill=YELLOW, get_font(100), anchor="mm")
+        
+        # [수정된 부분] font= 인자 추가하여 에러 해결
+        draw.text((width/2 + 410, 80), prop_type, fill=YELLOW, font=get_font(100), anchor="mm")
 
         draw.rectangle([(0, 160), (width, 330)], fill=YELLOW)
         draw.text((width/2 - 250, 245), "초기투자금 :", fill=RED, font=f_invest_label, anchor="mm")
@@ -200,9 +204,9 @@ if submitted:
             draw_val_unit_億(draw, x + col_w/2, table_y + 130, vals[i], f_table_val, f_table_unit, color_val)
 
         detail_y, split_x = 520, col_w * 4
-        row_height = 72
         
         for i, text in enumerate(list_inputs):
+            row_height = 72
             cur_y = detail_y + 35 + (i * row_height)
             bg_color = GRAY_BG if i % 2 == 0 else WHITE
             y_start = detail_y + (i * row_height) - 1
@@ -255,13 +259,12 @@ if submitted:
         # Show & Download
         st.image(image, caption="생성된 매물 카드", use_column_width=True)
         
-        # Save to buffer for download
         buf = io.BytesIO()
         image.save(buf, format="PNG")
         byte_im = buf.getvalue()
 
         st.download_button(
-            label="⬇️ 이미지 다운로드 (핸드폰 저장)",
+            label="⬇️ 이미지 다운로드 (클릭)",
             data=byte_im,
             file_name=f"매물정보_{selected_zone}.png",
             mime="image/png",
